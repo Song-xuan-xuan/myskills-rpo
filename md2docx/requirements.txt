@@ -1,0 +1,7 @@
+# md2docx 运行依赖
+# 外部命令（非 pip）：pandoc >= 2.11
+#   macOS:  brew install pandoc
+#   Ubuntu: apt install pandoc
+
+python-docx>=1.1.0     # 读写 docx
+Pillow>=9.0.0          # 可选：preview.py --sheet 拼联系表，没有也能用

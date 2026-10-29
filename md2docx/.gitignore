@@ -1,0 +1,20 @@
+# ---- 生成物：不要提交 ----
+*.docx
+*.pdf
+*_联系表.png
+
+# 用户自己的格式档案（内置的三套在 profiles/ 里，要提交）
+*.profile.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- 临时目录 ----
+build/
+dist/
+
+# ---- macOS ----
+.DS_Store
