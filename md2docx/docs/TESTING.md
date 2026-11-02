@@ -1,7 +1,7 @@
 # 人工验收脚本
 
 > **这份文档是给人看的**（安装后逐条走一遍，确认功能都在）。
-> agent 不要执行这里的手工步骤，它只需要跑 `verify.py`。
+> agent 不要执行这里的手工步骤，它只需要跑 `md2docx.py verify`。
 
 ## 前提
 
@@ -51,7 +51,7 @@ python3 .agents/skills/md2docx/selftest.py
 ## 第 3 步：看格式清单（30 秒）
 
 ```bash
-python3 .agents/skills/md2docx/format_report.py technical
+python3 .agents/skills/md2docx/configure.py --report technical
 ```
 
 期望看到一份中文清单（页面/正文/标题1-6/图题注/表题注/公式/表格/代码块/页眉页脚/封面/目录），
@@ -73,11 +73,11 @@ mkdir -p /tmp/try && cd /tmp/try
 cp .agents/skills/md2docx/examples/{sample-report.md,sample.bib,flow.png} .
 
 python3 .agents/skills/md2docx/md2docx.py sample-report.md out.docx
-python3 .agents/skills/md2docx/preview.py out.docx
+python3 .agents/skills/md2docx/md2docx.py preview out.docx
 ```
 
 这一步是**人工验收脚本**：用眼睛确认版式。agent 不要执行这一步
-（它应该只跑 `verify.py`，需要图时用 `preview.py --sheet` 出一张）。
+（它应该只跑 `md2docx.py verify`，需要图时用 `md2docx.py preview --sheet` 出一张）。
 
 按顺序看 7 处：
 
@@ -106,7 +106,7 @@ cp .agents/skills/md2docx/profiles/technical.json /tmp/try/mine.json
 
 cd /tmp/try
 python3 .agents/skills/md2docx/md2docx.py sample-report.md t.docx --profile mine.json
-python3 .agents/skills/md2docx/preview.py t.docx
+python3 .agents/skills/md2docx/md2docx.py preview t.docx
 ```
 
 缩进消失 + 封面标题变小 = 配置链路通。
@@ -143,7 +143,7 @@ python3 .agents/skills/md2docx/configure.py --sample /tmp/try/mine.json
 
 ```bash
 python3 .agents/skills/md2docx/configure.py --from-docx 单位模板.docx --out 单位.json
-python3 .agents/skills/md2docx/format_report.py 单位.json
+python3 .agents/skills/md2docx/configure.py --report 单位.json
 ```
 
 核对识别结果对不对，不对就用 `--set` 改。
@@ -184,7 +184,7 @@ python3 .agents/skills/md2docx/md2docx.py 报告.md 交付版.docx --profile tec
 ### 一份 md 出多版
 
 ```bash
-python3 .agents/skills/md2docx/batch.py sample-report.md --outdir /tmp/dist
+python3 .agents/skills/md2docx/md2docx.py batch sample-report.md --outdir /tmp/dist
 ls /tmp/dist     # 三个版本：technical / official / academic
 ```
 
@@ -226,7 +226,7 @@ python3 .agents/skills/md2docx/md2docx.py sample-report.md /tmp/logo.docx --prof
 
 ```bash
 python3 .agents/skills/md2docx/configure.py --from-docx sample-report.docx --out /tmp/rev.json
-python3 .agents/skills/md2docx/format_report.py /tmp/rev.json
+python3 .agents/skills/md2docx/configure.py --report /tmp/rev.json
 ```
 
 应识别出：宋体小四、黑体三号标题、首行缩进 2 字符、1.5 倍行距、页边距 3.17cm、页眉文字。
@@ -234,14 +234,14 @@ python3 .agents/skills/md2docx/format_report.py /tmp/rev.json
 ### 结构合规（Word 修复弹窗的根因检查）
 
 ```bash
-python3 .agents/skills/md2docx/verify.py /tmp/app.docx /tmp/logo.docx
+python3 .agents/skills/md2docx/md2docx.py verify /tmp/app.docx /tmp/logo.docx
 ```
 
 
 ## 第 8 步：一键交付（推荐给用户）
 
 ```bash
-python3 .agents/skills/md2docx/make.py sample-report.md
+python3 .agents/skills/md2docx/md2docx.py make sample-report.md
 ```
 
 一条命令做完：转换 → 结构合规 → 交付质检 → 打印本次用了哪套格式。
@@ -250,7 +250,7 @@ python3 .agents/skills/md2docx/make.py sample-report.md
 多版本：
 
 ```bash
-python3 .agents/skills/md2docx/make.py sample-report.md --profiles technical,official,academic
+python3 .agents/skills/md2docx/md2docx.py make sample-report.md --profiles technical,official,academic
 ```
 
 ## 第 9 步：验证「不再靠截图」
@@ -258,7 +258,7 @@ python3 .agents/skills/md2docx/make.py sample-report.md --profiles technical,off
 以前验收要导 PDF、逐页看。现在：
 
 ```bash
-python3 .agents/skills/md2docx/verify.py 你的报告.docx
+python3 .agents/skills/md2docx/md2docx.py verify 你的报告.docx
 ```
 
 输出分三类：[错误] 必须修 / [提醒] 可能不是你要的效果 / [需肉眼] 通常 0~3 行。
@@ -268,24 +268,24 @@ python3 .agents/skills/md2docx/verify.py 你的报告.docx
 
 ```bash
 # 默认不启动 Word：若同目录已有 PDF 就直接用它拼图
-python3 .agents/skills/md2docx/preview.py 你的报告.docx --sheet
+python3 .agents/skills/md2docx/md2docx.py preview 你的报告.docx --sheet
 
 # 确实要脚本调 Word 渲染时才加 --word
-python3 .agents/skills/md2docx/preview.py 你的报告.docx --sheet --word
+python3 .agents/skills/md2docx/md2docx.py preview 你的报告.docx --sheet --word
 # → 你的报告_联系表.png（封面 + 目录 + 正文首末页拼成一张）
 ```
 
 Word 弹「文件被锁定」时先看状态：
 
 ```bash
-python3 .agents/skills/md2docx/preview.py --doctor
-python3 .agents/skills/md2docx/preview.py --cleanup
+python3 .agents/skills/md2docx/md2docx.py preview --doctor
+python3 .agents/skills/md2docx/md2docx.py preview --cleanup
 ```
 
 ## 交付前
 
 - WPS 打开验一遍（域与多级列表的兼容性）
-- 转 PDF 走 `preview.py`（内部会 F9 更新域），不要直接「另存为 PDF」
+- 转 PDF 走 `md2docx.py preview`（内部会 F9 更新域），不要直接「另存为 PDF」
 - 想更换档案：`--profile official` / `--profile academic` / 自定义 JSON
 
 ---
@@ -293,10 +293,10 @@ python3 .agents/skills/md2docx/preview.py --cleanup
 ## 出问题怎么定位
 
 ```bash
-python3 .agents/skills/md2docx/tools/show_styles.py out.docx    # 每段的样式/字体/缩进
+python3 .agents/skills/md2docx/md2docx.py styles out.docx    # 每段的样式/字体/缩进
 python3 .agents/skills/md2docx/md2docx.py --list-profiles
 python3 .agents/skills/md2docx/selftest.py
 python3 .agents/skills/md2docx/configure.py --list        # 55 条配置问题
 python3 .agents/skills/md2docx/configure.py --list --core # 15 条核心问题
-python3 .agents/skills/md2docx/format_report.py technical # 当前格式清单
+python3 .agents/skills/md2docx/configure.py --report technical # 当前格式清单
 ```

@@ -12,11 +12,22 @@ description: 把 Markdown 报告转成排版规范、编号可自动重排的 Wo
 brew install pandoc            # 或 apt install pandoc
 pip install -r requirements.txt
 
-# 自检（换机器后先跑这个，136 项）
+# 自检（换机器后先跑这个，138 项）
 python3 selftest.py
 ```
 
-目录里 `examples/` 是样例 md，`docs/TESTING.md` 是人工验收脚本，`tools/` 是排查小工具。
+**只有一个入口**（下面常用这几条就够）：
+
+| 做什么 | 命令 |
+|---|---|
+| 转换 | `python3 md2docx.py 报告.md` |
+| 转换 + 验收（推荐） | `python3 md2docx.py make 报告.md` |
+| 一份 md 出多版 | `python3 md2docx.py make 报告.md --profiles technical,official` |
+| 交付验收 | `python3 md2docx.py verify 报告.docx` |
+| 看效果（只出一张图） | `python3 md2docx.py preview 报告.docx --sheet` |
+| 定制格式 | `python3 configure.py --list` / `--ask` / `--from-docx` / `--report` |
+
+目录里 `examples/` 是样例 md，`docs/TESTING.md` 是人工验收脚本（给人看的）。
 
 ## 产物约定（重要）
 
@@ -26,8 +37,8 @@ python3 selftest.py
 | 产物 | 什么时候出现 |
 |---|---|
 | `报告.docx` | 每次转换，**唯一默认产物** |
-| `报告.pdf` / `报告_联系表.png` | 仅 `make.py --pdf` / `preview.py --sheet` |
-| `dist/*.docx` | 仅 `batch.py`（一份 md 出多版） |
+| `报告.pdf` / `报告_联系表.png` | 仅 `md2docx.py make --pdf` / `md2docx.py preview --sheet` |
+| `dist/*.docx` | 仅 `md2docx.py batch`（一份 md 出多版） |
 | `样张_*.docx` | 仅 `configure.py --sample` |
 
 ## 什么时候用
@@ -79,7 +90,7 @@ python3 selftest.py
 
 ```bash
 python3 $SKILL/configure.py --from-docx 单位模板.docx --out 客户A.json
-python3 $SKILL/format_report.py 客户A.json     # 念给用户听，确认识别对不对
+python3 $SKILL/configure.py --report 客户A.json     # 念给用户听，确认识别对不对
 ```
 
 它会读出字体、字号、缩进、行距、页边距、页眉文字，直接落成档案。
@@ -125,7 +136,7 @@ python3 $SKILL/configure.py --sample 报告.profile.json
 #### 情况 C：用户直接说清要求
 
 「正文仿宋三号、标题编号用一、 不要封面」——不必再问，`--set` 批量设好，
-出样张，然后念一遍 `format_report.py` 让用户确认。
+出样张，然后念一遍 `configure.py --report` 让用户确认。
 
 ### 阶段 ④：转换 + 自动验收
 
@@ -134,10 +145,10 @@ python3 $SKILL/configure.py --sample 报告.profile.json
 SKILL="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"   # 交互式里可直接写实际路径
 
 # 一条命令：转换 + 质检 + 摘要（推荐）
-python3 $SKILL/make.py 报告.md
+python3 $SKILL/md2docx.py make 报告.md
 
 # 要多个版本（技术版/公文版/论文版）
-python3 $SKILL/make.py 报告.md --profiles technical,official,academic
+python3 $SKILL/md2docx.py make 报告.md --profiles technical,official,academic
 
 # 只要一版、指定档案
 python3 $SKILL/md2docx.py 报告.md 交付版.docx --profile 报告.profile.json
@@ -145,11 +156,11 @@ python3 $SKILL/md2docx.py 报告.md 交付版.docx --profile 报告.profile.json
 
 `--profile` 可以给档案名，也可以给路径（相对当前目录）。
 
-**到此为止就交付，不要自己去看渲染效果**——`make.py` 已经跑了 `verify.py`。
+**到此为止就交付，不要自己去看渲染效果**——`md2docx.py make` 已经跑了 `verify`。
 只有用户说「给我看看长什么样」时才渲染，且**一次只出一张联系表**：
 
 ```bash
-python3 $SKILL/preview.py 交付版.docx --sheet   # 需要现成 PDF 或显式 --word
+python3 $SKILL/md2docx.py preview 交付版.docx --sheet   # 需要现成 PDF 或显式 --word
 ```
 
 ### 阶段 ⑤：按反馈改格式（改档案，不改代码）
@@ -258,26 +269,26 @@ python3 $SKILL/configure.py --base <md名>.profile.json --out <md名>.profile.js
 | 图目录/表目录默认要不要 | `front_matter.figures.enabled` / `.tables.enabled`（默认：技术报告关、学位论文开） |
 | 附录自动编号 A / A.1 | `appendix.enabled`，起点标题加 `{#sec:app}` |
 | 封面 logo | `cover.logo` + `cover.logo_width_cm` |
-| 一份 md 出多版 | `make.py 报告.md --profiles a,b,c`（或 `batch.py`） |
+| 一份 md 出多版 | `md2docx.py make 报告.md --profiles a,b,c` |
 | 参考文献删条目后编号自动重排 | 默认开；`citations.number_bibliography: false` 可关 |
 | 列表字号 vs 表格字号 | `styles.Compact`（列表）/ `styles.TableText`（表格）分开调 |
 | 列宽按内容自动分 | `table.col_widths` = `{"tbl:x": "auto"}` |
 
-## 交付前检查：**先跑 verify.py，不要截图**
+## 交付前检查：**先跑 verify，不要截图**
 
 ```bash
-python3 $SKILL/make.py 报告.md          # 转换 + 自动 verify + 打印格式摘要
+python3 $SKILL/md2docx.py make 报告.md          # 转换 + 自动 verify + 打印格式摘要
 ```
 
 只要转换不要摘要时：
 
 ```bash
-python3 $SKILL/verify.py out.docx        # 程序化验收（推荐）
-python3 $SKILL/tools/show_styles.py out.docx   # 逐段看用了哪个样式、缩进多少
-python3 $SKILL/format_report.py <profile># 当前格式清单（念给用户听）
+python3 $SKILL/md2docx.py verify out.docx   # 程序化验收（推荐）
+python3 $SKILL/md2docx.py styles out.docx   # 逐段看用了哪个样式、缩进多少
+python3 $SKILL/configure.py --report <profile>   # 当前格式清单（念给用户听）
 ```
 
-`verify.py` 会把能判的全判掉，分三类输出：
+`md2docx.py verify` 会把能判的全判掉，分三类输出：
 
 - **[错误]**：必须修（引用没落点、题注缺 SEQ 域、跨部件引用悬空、书页脚缺页码…）
 - **[提醒]**：可能不是你要的效果（图/表题注可能被拆页、图片 dpi 偏低、长表未设表头重复…）
@@ -286,18 +297,18 @@ python3 $SKILL/format_report.py <profile># 当前格式清单（念给用户听�
 ### 关于「看效果」的硬规矩（很费 token，务必遵守）
 
 **禁止用 read 打开单页图片。** 一份 18 页的报告如果逐页转 PNG 再一张张 read，
-会烧掉几十万 token，而 `verify.py` 早就能把能判的都判完了。
+会烧掉几十万 token，而 `md2docx.py verify` 早就能把能判的都判完了。
 
 允许的行为只有两种：
 
 | 场景 | 做法 | 开销 |
 |---|---|---|
 | 交付给用户看 | 只给 **docx 路径**，让用户自己打开 | 0 |
-| 确实需要图（用户要求 / 定位某个视觉 bug） | `preview.py --sheet`，**一次 1 张**联系表 | 1 张图 |
+| 确实需要图（用户要求 / 定位某个视觉 bug） | `md2docx.py preview --sheet`，**一次 1 张** | 1 张图 |
 
 ```bash
-python3 $SKILL/preview.py 报告.docx --sheet     # 封面+目录+正文首末页，拼成一张
-python3 $SKILL/preview.py 报告.docx --pages 1,3 # 只要特定页（也拼成一张）
+python3 $SKILL/md2docx.py preview 报告.docx --sheet     # 封面+目录+正文首末页，拼成一张
+python3 $SKILL/md2docx.py preview 报告.docx --pages 1,3 # 只要特定页（也拼成一张）
 ```
 
 **不要**：
@@ -308,8 +319,8 @@ python3 $SKILL/preview.py 报告.docx --pages 1,3 # 只要特定页（也拼成�
 判断格式对不对，先跑这两个（都不依赖渲染器）：
 
 ```bash
-python3 $SKILL/verify.py 报告.docx
-python3 $SKILL/format_report.py 报告.profile.json
+python3 $SKILL/md2docx.py verify 报告.docx
+python3 $SKILL/configure.py --report 报告.profile.json
 ```
 
 ## 踩过的坑（别重犯）
@@ -322,12 +333,12 @@ python3 $SKILL/format_report.py 报告.profile.json
   docxfix 会自动加 `isLgl` 让它变成「3.1」
 - 中文序号后面不该跟空格（`一、 标题`），docxfix 会自动把 `suff` 设成 `nothing`
 - pandoc 3.x 是 `--syntax-highlighting=none`，2.x 是 `--no-highlight`（脚本已自动判断）
-- 域不会自动更新：交付前 **Ctrl+A → F9**，或走 `preview.py`（它内部会 F9）
+- 域不会自动更新：交付前 **Ctrl+A → F9**，或走 `md2docx.py preview`（它内部会 F9）
 - 预览要把文件复制到 **Word 自己的沙箱容器**
   （`~/Library/Containers/com.microsoft.Word/Data/Documents/`），
   否则 Word 会弹「授予访问权限」
 - 这版 Word 的 AppleScript **不支持 close 关闭文档**（会报错），
-  所以 preview.py 用「内容哈希文件名」避免重复预览时读到旧内容；
+  所以 preview 用「唯一文件名」避免重复预览时读到旧内容；
   预览后 Word 里会留一个临时窗口（同一份内容只留一个）
 - 交叉引用用 `{{fig:x}}` 而不是 `@fig:x`：citeproc 会把 `@key` 当文献引用吃掉
 - pandoc 把表注放在表**前面**，docxfix 只把「紧邻题注的那个书签」搬进题注；
@@ -349,16 +360,16 @@ python3 $SKILL/format_report.py 报告.profile.json
   `sectPr` 里 `headerReference` 必须最前，`settings.xml` 里 `trackChanges` 不能排在
   `updateFields` 后。顺序错了 Word 直接弹「文件可能已经损坏」，而 LibreOffice /
   python-docx 照常打开。docxfix 每次输出前会 `normalize_structure()` 统一排序，
-  交付前用 `verify.py` 复查
+  交付前用 `md2docx.py verify` 复查
 - `footnotePr` / `endnotePr` 在 `sectPr` 里只能有一个：先删旧的再插新的，
   否则重复元素同样触发「已损坏」
 - Word 单实例：两个会话同时预览会互相踩（「文件被锁定，锁者：另一用户」）。
-  `preview.py` 有文件锁排队，并会清 `~$` 锁文件、关模态弹窗
+  `md2docx.py preview` 有文件锁排队，并会清 `~$` 锁文件、关模态弹窗
 
 ## 环境依赖
 
-pandoc 2.x/3.x、python3 + `python-docx`、macOS 上 `preview.py` 用 Microsoft Word 导 PDF。
+pandoc 2.x/3.x、python3 + `python-docx`、macOS 上 `md2docx.py preview` 用 Microsoft Word 导 PDF。
 
 Word 的 AppleScript 偶尔会失灵（打开无反应、active document 是别人的文件）。
-`preview.py` 已经做了：唯一文件名、按文件名确认、清锁文件、关弹窗、失败重启 Word 重试。
+`md2docx.py preview` 已经做了：唯一文件名、按文件名确认、清锁文件、关弹窗、失败重启 Word 重试。
 若仍失败，直接让对方打开 docx 看效果，不要卡在预览上。

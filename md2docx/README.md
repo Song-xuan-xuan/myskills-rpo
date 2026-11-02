@@ -31,9 +31,9 @@ report.md ──pandoc+模板──> report.docx ──docxfix──> 可交付.
 ```
 
 ```bash
-python3 make.py 报告.md                 # 转换 + 质检 + 格式摘要（推荐）
-python3 make.py 报告.md --pdf           # 顺带导 PDF（需要本机 Word）
-python3 make.py 报告.md --profiles technical,official   # 一份 md 出多版
+python3 md2docx.py make 报告.md                 # 转换 + 质检 + 格式摘要（推荐）
+python3 md2docx.py make 报告.md --pdf           # 顺带导 PDF（需要本机 Word）
+python3 md2docx.py make 报告.md --profiles technical,official   # 一份 md 出多版
 ```
 
 只要转换、不要质检：
@@ -86,7 +86,7 @@ profile.json
 改完随时看当前格式：
 
 ```bash
-python3 format_report.py <档案名或路径>
+python3 configure.py --report <档案名或路径>
 ```
 
 输出是一份中文清单（页面/正文/各级标题/题注/表格/代码块/页眉页脚/封面/目录），
@@ -453,10 +453,10 @@ md 里**不要手写「附录 A」**，只写标题并加锚点：
 ### 2.21 一份 md 出多版
 
 ```bash
-python3 batch.py 报告.md                                   # 三套内置档案全出
-python3 batch.py 报告.md --profiles technical,academic      # 指定档案
-python3 batch.py 报告.md --outdir dist --prefix 2026Q3      # 指定目录和前缀
-python3 batch.py 报告.md --profiles a.json,b.json --sample   # 顺带出样张
+python3 md2docx.py batch 报告.md                                   # 三套内置档案全出
+python3 md2docx.py batch 报告.md --profiles technical,academic      # 指定档案
+python3 md2docx.py batch 报告.md --outdir dist --prefix 2026Q3      # 指定目录和前缀
+python3 md2docx.py batch 报告.md --profiles a.json,b.json --sample   # 顺带出样张
 ```
 
 输出：
@@ -636,7 +636,7 @@ python3 md2docx.py report.md out.docx --profile official
 
 ```bash
 python3 configure.py --from-docx 单位模板.docx --out 客户A.json
-python3 format_report.py 客户A.json
+python3 configure.py --report 客户A.json
 ```
 
 会从 docx 里读出：正文字体字号、各级标题、题注、缩进、行距、段前后距、
@@ -777,12 +777,12 @@ print("代码块")
 
 ---
 
-## 七、交付验收：verify.py
+## 七、交付验收：md2docx.py verify
 
 ```bash
-python3 verify.py 报告.docx          # 人话报告
-python3 verify.py 报告.docx --json   # 机器可读
-python3 verify.py dist/              # 整个目录
+python3 md2docx.py verify 报告.docx          # 人话报告
+python3 md2docx.py verify 报告.docx --json   # 机器可读
+python3 md2docx.py verify dist/              # 整个目录
 ```
 
 一次把「程序能判断的」全部判掉，只剩少数需要眼睛的：
@@ -799,39 +799,39 @@ python3 verify.py dist/              # 整个目录
 ## 七点五、只看一张图：联系表（**唯一允许的看图方式**）
 
 > agent 注意：**禁止把 PDF 逐页转 PNG 再一张张 read**。
-> 18 页报告那样看要烧几十万 token，而 `verify.py` 已经判完了能判的。
+> 18 页报告那样看要烧几十万 token，而 `md2docx.py verify` 已经判完了能判的。
 > 交付时只给 docx 路径；确实要看图，就一次出一张联系表。
 
 ```bash
-python3 preview.py 报告.docx --sheet          # 自动挑关键页
-python3 preview.py 报告.docx --pages 1,3,8    # 指定页
-python3 preview.py 报告.docx --sheet --cols 3 # 一行三页
+python3 md2docx.py preview 报告.docx --sheet          # 自动挑关键页
+python3 md2docx.py preview 报告.docx --pages 1,3,8    # 指定页
+python3 md2docx.py preview 报告.docx --sheet --cols 3 # 一行三页
 ```
 
 自动挑的是：封面、目录页、正文首页、最后一页。输出
 `报告_联系表.png`，一张图看完，不用逐页截图。
 
-**preview.py 默认不会启动 Word**（原因见下一节）。所以：
+**md2docx.py preview 默认不会启动 Word**（原因见下一节）。所以：
 
 ```bash
 # 已有 PDF（你自己导出的）→ 直接拿来拼联系表，不碰 Word
-python3 preview.py 报告.docx --sheet
+python3 md2docx.py preview 报告.docx --sheet
 
 # 需要脚本去调 Word 渲染时才加 --word
-python3 preview.py 报告.docx --sheet --word
+python3 md2docx.py preview 报告.docx --sheet --word
 
 # 诊断 Word 状态 / 清理本工具的残留
-python3 preview.py --doctor
-python3 preview.py --cleanup
+python3 md2docx.py preview --doctor
+python3 md2docx.py preview --cleanup
 ```
 
 需要 Pillow（`pip install pillow`）；没有的话会退化成导出整份 PDF。
 
-### 7.9 verify.py 的检查清单
+### 7.9 verify 的检查清单
 
 ```bash
-python3 verify.py 报告.docx          # 单文件
-python3 verify.py dist/              # 整个目录
+python3 md2docx.py verify 报告.docx          # 单文件
+python3 md2docx.py verify dist/              # 整个目录
 ```
 
 分两层：
@@ -875,7 +875,7 @@ python3 verify.py dist/              # 整个目录
 **先自查：**
 
 ```bash
-python3 verify.py 报告.docx
+python3 md2docx.py verify 报告.docx
 ```
 
 它检查 Word 最在意的四类问题：
@@ -922,7 +922,7 @@ EOF
 
 1. Word 在 macOS 上只有一个实例。两个会话（或两个 agent）同时让 Word 打开文件，
    后打开的那个就会看到「锁定者：另一用户」。
-2. `preview.py` 会把待预览的 docx 复制到 Word 沙箱容器里再打开。
+2. `md2docx.py preview` 会把待预览的 docx 复制到 Word 沙箱容器里再打开。
    如果上一次的副本没清掉、或那份文档还开在 Word 里，同名文件再次打开就报锁定。
 3. 这版 Word 的 AppleScript **没有可用的 close 命令**，文档关不掉、越积越多。
 
@@ -940,8 +940,8 @@ EOF
 **你需要做的**：
 
 ```bash
-python3 preview.py --doctor        # 看 Word 进程 / 打开的文档 / 本工具残留
-python3 preview.py --cleanup       # 清掉本工具留下的临时文件
+python3 md2docx.py preview --doctor        # 看 Word 进程 / 打开的文档 / 本工具残留
+python3 md2docx.py preview --cleanup       # 清掉本工具留下的临时文件
 ```
 
 如果 `--doctor` 显示「Word 有关不掉的文档」或渲染报 `-2700` / `missing value`：
@@ -949,7 +949,7 @@ python3 preview.py --cleanup       # 清掉本工具留下的临时文件
 **自己双击 docx 看效果**，或「文件 → 导出为 PDF」后不带 `--word` 再跑一次
 （会自动复用那份 PDF 拼联系表）。
 
-真正判断格式对不对，用 `verify.py`，它不需要任何渲染器。
+真正判断格式对不对，用 `md2docx.py verify`，它不需要任何渲染器。
 
 ### 11.5 高级开关（档案里没写，但代码支持）
 
@@ -995,29 +995,32 @@ md2docx/
 ├── SKILL.md               skill 入口（agent 读这个）
 ├── README.md              完整手册（人读这个）
 ├── requirements.txt       Python 依赖
+├── .gitignore
 │
-├── make.py                一键：转换 + 验收 + 格式摘要（推荐入口）
-├── md2docx.py             一条命令出稿（--profile / --reference）
-├── verify.py              交付验收：错误 / 提醒 / 需人看
-├── preview.py             导 PDF 或关键页联系表（--sheet）
-├── batch.py               一份 md 出多个版本
+├── md2docx.py             唯一入口：convert / make / batch / verify / preview / styles
+├── configure.py           格式档案：问答 / 反推模板 / 样张 / 对比 / 格式清单
+├── _common.py             共用小函数（路径、退出、档案解析）
 │
-├── configure.py           问答式生成档案（--ask/--from-docx/--sample/--diff/--set）
-├── questions.json         问题清单（72 条，可自行增删）
-├── asklib.py              交互底层：扫 md、筛问题、反推模板、档案对比
-├── format_report.py       把档案翻译成中文格式清单
+├── build_template.py      引擎①：profile → reference.docx（样式/页面/页眉页脚）
+├── docxfix.py             引擎②：静态文字 → Word 域（题注/引用/目录/分节/表格）
+│
+├── questions.json         问答清单（72 条，可自行增删）
 ├── profiles/              三套内置档案：technical / official / academic
-│
-├── build_template.py      由档案编译 reference.docx（被 md2docx.py 调用）
-├── docxfix.py             后处理：域、编号、表格、目录、分节
 ├── csl/                   三套国标参考文献样式（离线）
 │
-├── selftest.py            自检整条管线（136 项）
-├── tools/show_styles.py   排查用：逐段打印样式/字体/缩进
-├── docs/TESTING.md        人工验收脚本（给人看的）
-├── docs/REPO-HINT.md      放进多 skill 仓库时的组织与安装方式
+├── selftest.py            自检整条管线（138 项）
+├── docs/
+│   ├── TESTING.md         人工验收脚本（给人看的）
+│   └── REPO-HINT.md       放进多 skill 仓库时的组织与安装方式
 └── examples/              样例：sample-report.md / complex-sample.md / sample.bib / *.png
 ```
 
-> `examples/` 里的 md 是**输入样例**，转换时在它们旁边生成 docx 即可，
-> 不要提交生成的 docx（见 `.gitignore`）。
+一条命令记法：
+
+```bash
+python3 md2docx.py <md>          # 转换
+python3 md2docx.py make <md>     # 转换 + 验收（推荐）
+python3 md2docx.py verify x.docx # 验收
+python3 md2docx.py preview x.docx --sheet   # 看效果（一张图）
+python3 configure.py --list      # 定制格式
+```

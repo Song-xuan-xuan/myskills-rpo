@@ -211,12 +211,12 @@ def guard_docs():
     print("\n[文档守门]")
     ok = True
     skill = open(os.path.join(HERE, "SKILL.md"), encoding="utf-8").read()
-    verify_src = open(os.path.join(HERE, "verify.py"), encoding="utf-8").read()
+    verify_src = open(os.path.join(HERE, "md2docx.py"), encoding="utf-8").read()
 
     # ① SKILL 的主流程代码块里不能直接出现 preview.py 调用（只在「看效果」一节允许）
     flow = skill[skill.index("### 阶段 ④"):skill.index("### 阶段 ⑤")]
     ok = check("转换阶段不含自动渲染命令",
-               "preview.py 交付版" not in flow or "--sheet" in flow) and ok
+               "preview 交付版" not in flow or "--sheet" in flow) and ok
 
     # ② verify.py 不许写「打开 docx → F9」这类指令
     ok = check("verify 输出不再指令人肉打开",
@@ -230,7 +230,16 @@ def guard_docs():
     ok = check("SKILL 有「内容确认后才导出」门禁",
                "硬门禁" in skill and "阶段 ②" in skill) and ok
 
-    # ⑤ 根目录不许再堆样例/文档（GitHub 仓库要干净）
+    # ⑤ 文件数守门：只允许 6 个 py，防止又长出十几个入口
+    pys = sorted(f for f in os.listdir(HERE) if f.endswith(".py"))
+    ok = check("只有 6 个 py 文件", len(pys) == 6, str(pys)) and ok
+    ok = check("没有多余的入口脚本",
+               not any(os.path.exists(os.path.join(HERE, f))
+                       for f in ("make.py", "verify.py", "preview.py",
+                                 "batch.py", "asklib.py", "format_report.py",
+                                 "check.py"))) and ok
+
+    # ⑥ 根目录不许再堆样例/文档（GitHub 仓库要干净）
     root_junk = [f for f in os.listdir(HERE)
                  if f.endswith((".md", ".png", ".bib"))
                  and f not in ("README.md", "SKILL.md")]
@@ -471,7 +480,7 @@ def extras4():
 
     # ② 批量出多版
     d = os.path.join(tmp, "dist")
-    r = run([sys.executable, "batch.py", os.path.join(HERE, "examples/sample-report.md"),
+    r = run([sys.executable, "md2docx.py", "batch", os.path.join(HERE, "examples/sample-report.md"),
              "--outdir", d, "--profiles", "technical,official"])
     files = []
     if os.path.isdir(d):
@@ -531,7 +540,7 @@ def extras():
     ok = True
 
     # 格式清单
-    r = run([sys.executable, "format_report.py", "technical"])
+    r = run([sys.executable, "configure.py", "--report", "technical"])
     good = r.returncode == 0 and "正文" in r.stdout and "图题注" in r.stdout
     ok = check("格式清单可生成", good, r.stderr.strip()[:200] if not good else "")
     if good:
@@ -642,7 +651,7 @@ def main():
     tmp2 = os.path.join(OUT, "make")
     os.makedirs(tmp2, exist_ok=True)
     src_md = os.path.join(HERE, "examples/sample-report.md")
-    r = run([sys.executable, "make.py", src_md, "--out",
+    r = run([sys.executable, "md2docx.py", "make", src_md, "--out",
              os.path.join(tmp2, "out.docx")])
     ok = check("make.py 一键通过", r.returncode == 0,
                (r.stdout[-300:] + r.stderr[-300:])) and ok
@@ -654,23 +663,23 @@ def main():
     ok = check("make.py 不打印内部临时路径", not leaked, str(leaked[:2])) and ok
 
     # verify.py：一次把能判的都判掉
-    r = run([sys.executable, "verify.py", sample])
-    ok = check("verify.py 对成品判为通过", r.returncode == 0,
+    r = run([sys.executable, "md2docx.py", "verify", sample])
+    ok = check("verify 对成品判为通过", r.returncode == 0,
                r.stdout[-300:]) and ok
-    ok = check("verify.py 输出「需人看」清单",
+    ok = check("verify 输出「需人看」清单",
                "需要人看" in r.stdout or "没有需要肉眼" in r.stdout,
                r.stdout[-200:]) and ok
-    r = run([sys.executable, "verify.py", sample, "--json"])
+    r = run([sys.executable, "md2docx.py", "verify", sample, "--json"])
     good = r.returncode in (0, 1) and '"problems"' in r.stdout
-    ok = check("verify.py 支持 --json", good, r.stderr[-200:]) and ok
+    ok = check("verify 支持 --json", good, r.stderr[-200:]) and ok
     # 故意造一个坏文件，确认能报出来
     bad = os.path.join(OUT, "bad-anchor.docx")
     md2 = os.path.join(OUT, "bad.md")
     with open(md2, "w", encoding="utf-8") as fh:
         fh.write("---\ntitle: T\n---\n\n# 一\n\n见 {{fig:none}} 。\n")
     r = run([sys.executable, "md2docx.py", md2, bad])
-    r2 = run([sys.executable, "verify.py", bad])
-    ok = check("verify.py 能报出未替换的引用标记",
+    r2 = run([sys.executable, "md2docx.py", "verify", bad])
+    ok = check("verify 能报出未替换的引用标记",
                r2.returncode == 1 and "没替换" in r2.stdout, r2.stdout[-300:]) and ok
 
     fails = [r for r in results if not r[1]]
