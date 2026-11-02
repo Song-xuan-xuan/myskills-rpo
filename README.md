@@ -1,5 +1,10 @@
 # myskills
 
+> ⚠️ **精简版，测试中。** `md2docx` 于 2026-11-02 做过一次重构（12 个脚本合并为 6 个、
+> 命令收成单入口）。自检 137 项通过，但尚未在真实报告上完整验收。
+> 稳定版见 [commit 605bc54](https://github.com/Song-xuan-xuan/myskills-rpo/tree/605bc54)。
+> 测完删掉本提示。
+
 我自己的 pi skills 合集。每个子目录是一个独立的 skill，可以直接链接到
 `~/.pi/agent/skills/` 或项目内的 `.agents/skills/` 使用。
 
