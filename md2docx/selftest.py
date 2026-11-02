@@ -578,6 +578,15 @@ d.save(sys.argv[2])
             ok = check("模板里的加粗保留到了输出", bold)
     else:
         ok = check("--reference 自定义模板可用", False, r.stderr.strip()[:200]) and ok
+
+    # 公式统计（曾经因为只看 oMathPara 而永远报 0）
+    r = run([sys.executable, "md2docx.py", "verify",
+             os.path.join(OUT, "复杂样例_technical.docx"), "--json"])
+    try:
+        st = json.loads(r.stdout)[0]["stats"]
+        ok = check("verify 能统计出行间公式", st.get("公式", 0) > 0, str(st)) and ok
+    except Exception as e:
+        ok = check("verify 能统计出行间公式", False, str(e)[:120]) and ok
     return ok
 
 

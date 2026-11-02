@@ -515,8 +515,19 @@ def check_captions(doc, path, problems, warnings, stats):
                 if prev is not None and style_of(prev) in ("TableCaption", "Caption"):
                     if not para_keeps_next(prev, keep_styles):
                         not_same_page.append(para_text(prev))
-        if node.tag == wq("p") and node.find(M + "oMathPara") is not None:
-            eq_n += 1
+        # 公式：docxfix 会把 pandoc 的 <m:oMathPara> 拆成「tab + oMath + tab + 编号」，
+        # 所以不能只看 oMathPara（那样永远统计成 0）。
+        # 行间公式的特征是：段落里 oMath 前面是一个制表符 run 或带 SEQ 域；
+        # 行内公式（$m$）前面是文字 run，不算。
+        if node.tag == wq("p") and node.find(".//" + M + "oMath") is not None:
+            first_run = next((c for c in node if c.tag == wq("r")), None)
+            lead_tab = (first_run is not None
+                        and first_run.find(wq("tab")) is not None)
+            numbered = any("SEQ 公式" in x for x in instr_texts(node))
+            if lead_tab or numbered:
+                eq_n += 1
+            if numbered:
+                seq_eq += 1
 
         if sid in ("ImageCaption", "TableCaption"):
             text = para_text(node)
@@ -539,6 +550,9 @@ def check_captions(doc, path, problems, warnings, stats):
         problems.append("表 %d 个，但有编号的表注只有 %d 个" % (tbl_n, seq_tbl))
     if empty:
         warnings.append("%d 个题注只有编号没有文字：%s" % (len(empty), "、".join(empty[:3])))
+    if eq_n and seq_eq < eq_n:
+        problems.append("公式 %d 个，但有编号的只有 %d 个" % (eq_n, seq_eq))
+    stats["公式编号"] = seq_eq
     if not_same_page:
         warnings.append("图/表与其题注可能被分页拆开（缺 keepNext）：%s"
                         % "、".join(x[:16] for x in not_same_page[:3]))

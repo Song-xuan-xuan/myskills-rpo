@@ -4,7 +4,7 @@ description: 把 Markdown 报告转成排版规范、编号可自动重排的 Wo
 ---
 
 > ⚠️ **精简版，测试中**。命令已合并为单入口（`md2docx.py <子命令>`），
-> 自检 137 项通过，但尚未在真实报告上完整验收。遇到问题请先看 `docs/TESTING.md`。
+> 自检 138 项通过，但尚未在真实报告上完整验收。遇到问题请先看 `docs/TESTING.md`。
 
 # md2docx：Markdown → 规范 Word 报告
 
