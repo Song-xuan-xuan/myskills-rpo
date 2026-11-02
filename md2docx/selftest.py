@@ -579,6 +579,25 @@ d.save(sys.argv[2])
     else:
         ok = check("--reference 自定义模板可用", False, r.stderr.strip()[:200]) and ok
 
+    # 参考文献写法预检：手写 URL 列表要告警
+    bad_md = os.path.join(OUT, "badrefs.md")
+    with open(bad_md, "w", encoding="utf-8") as fh:
+        fh.write("# 正文\n\n内容。\n\n# 参考来源\n\n"
+                 "- 官网：https://example.com/\n- 文档：https://example.com/doc\n")
+    r = run([sys.executable, "md2docx.py", bad_md, os.path.join(OUT, "badrefs.docx")])
+    ok = check("手写链接列表会告警", "手写的链接列表" in (r.stderr + r.stdout),
+               (r.stderr or r.stdout)[:120]) and ok
+
+    good_md = os.path.join(OUT, "goodrefs.md")
+    with open(good_md, "w", encoding="utf-8") as fh:
+        fh.write("---\ntitle: T\nbibliography: r.bib\n---\n\n"
+                 "正文[@a]。\n\n# 参考文献\n\n::: {#refs}\n:::\n")
+    with open(os.path.join(OUT, "r.bib"), "w", encoding="utf-8") as fh:
+        fh.write("@misc{a, title={T}, organization={O}, year={2024}, "
+                 "url={https://e.com/}, urldate={2026-11-02}}\n")
+    r = run([sys.executable, "md2docx.py", good_md, os.path.join(OUT, "goodrefs.docx")])
+    ok = check("规范的 bib 写法不告警", "手写的链接列表" not in (r.stderr + r.stdout)) and ok
+
     # 公式统计（曾经因为只看 oMathPara 而永远报 0）
     r = run([sys.executable, "md2docx.py", "verify",
              os.path.join(OUT, "复杂样例_technical.docx"), "--json"])

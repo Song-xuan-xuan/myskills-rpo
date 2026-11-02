@@ -3,9 +3,6 @@ name: md2docx
 description: 把 Markdown 报告转成排版规范、编号可自动重排的 Word(docx)。当用户要把 md 稿子做成正式 Word 报告、需要图/表/公式自动题注与交叉引用、需要封面和分节页码、要讨论或定制字体字号缩进页眉页脚格式、或用户要改已有报告的排版格式时使用。
 ---
 
-> ⚠️ **精简版，测试中**。命令已合并为单入口（`md2docx.py <子命令>`），
-> 自检 138 项通过，但尚未在真实报告上完整验收。遇到问题请先看 `docs/TESTING.md`。
-
 # md2docx：Markdown → 规范 Word 报告
 
 本目录自带完整工具链，**不要自己重新写**。
@@ -15,7 +12,7 @@ description: 把 Markdown 报告转成排版规范、编号可自动重排的 Wo
 brew install pandoc            # 或 apt install pandoc
 pip install -r requirements.txt
 
-# 自检（换机器后先跑这个，138 项）
+# 自检（换机器后先跑这个，141 项）
 python3 selftest.py
 ```
 
@@ -223,12 +220,12 @@ python3 $SKILL/configure.py --base <md名>.profile.json --out <md名>.profile.js
 | 目录页码罗马数字 | `front_matter.page_num_fmt` = `upperRoman` |
 | 图目录/表目录 | `front_matter.figures.enabled` / `.tables.enabled` |
 
-## md 写法：三条硬规则
+## md 写法：四条硬规则
 
 1. **不要手写编号**（「图 1」「1.1」「表 2」），一律用锚点 + 引用：
    ```markdown
    ![说明](assets/a.png){#fig:arch}      → 图注自动编号
-   见图 @fig:arch。                        → REF 域，编号变了自己跟着变
+   见图 {{fig:arch}}。                     → REF 域，编号变了自己跟着变
 
    | A | B |
    |---|---|
@@ -242,9 +239,60 @@ python3 $SKILL/configure.py --base <md名>.profile.json --out <md名>.profile.js
    $$
    :::
    ```
-2. **首行缩进只加在 `BodyText` / `FirstParagraph`**，绝不能加到 `Normal`——
+
+   **引用一律写 `{{fig:x}}`、`{{tbl:x}}`、`{{eq:x}}`、`{{sec:x}}`，不要写 `@fig:x`**
+   ——pandoc 的 citeproc 会把 `@xxx` 当文献引用吃掉。
+
+2. **参考文献必须用 bib 机制，不能手写 URL 列表**。
+
+   手写列表（❌ 常见错误）：
+
+   ```markdown
+   # 参考来源
+
+   - LINUX DO 官网首页：https://linux.do/
+   - About 页：https://linux.do/about
+   ```
+
+   转出来就是**一串项目符号 + 裸链接**：没有 `[1]` 编号、没有国标格式、
+   正文也没有引用角标，而且删条目不会重排。
+
+   正确写法（✅）：
+
+   ```markdown
+   ---
+   bibliography: refs.bib        # ← YAML 头里必须有
+   ---
+
+   据社区公告[@linuxdo2024]与第三方调研[@aiinsight2026]，……
+
+   # 参考文献
+
+   ::: {#refs}
+   :::
+   ```
+
+   `refs.bib` 与 md 同目录，每条至少要有 title / author 或 organization / year / url：
+
+   ```bibtex
+   @misc{linuxdo2024,
+     title        = {LINUX DO 社区共建文档},
+     organization = {LINUX DO},
+     year         = {2024},
+     url          = {https://linux.do/t/topic/26306},
+     urldate      = {2026-11-02}
+   }
+   ```
+
+   这样出来才是 `[1] …[EB/OL]…` + 正文 `[1]` 角标，且编号是 SEQ 域、删条目按 F9 自动重排。
+
+   **不知道用哪些源时**：先按上面格式把 URL 逐条落成 `@misc` 条目，
+   再在正文对应位置插入 `[@key]`。宁可少引几处，也不要把文献写成裸链接列表。
+
+3. **首行缩进只加在 `BodyText` / `FirstParagraph`**，绝不能加到 `Normal`——
    否则标题、表格、图注会一起缩进（这是最常见的用户痛点）。
-3. **图片用相对路径**，不要用剪贴板临时路径（`/var/folders/...`），否则换机器就丢图。
+
+4. **图片用相对路径**，不要用剪贴板临时路径（`/var/folders/...`），否则换机器就丢图。
 
 ## 摘要 / 脚注 / 列表 / 表格列宽 / 文档开关
 

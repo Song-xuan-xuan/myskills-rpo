@@ -1,6 +1,3 @@
-> ⚠️ **精简版，测试中**。命令已合并为单入口（`md2docx.py <子命令>`），
-> 自检 138 项通过，但尚未在真实报告上完整验收。遇到问题请先看 `docs/TESTING.md`。
-
 # md2docx —— Markdown 写报告，一键出「排版可控 + 编号活」的 Word
 
 ```
@@ -1011,7 +1008,7 @@ md2docx/
 ├── profiles/              三套内置档案：technical / official / academic
 ├── csl/                   三套国标参考文献样式（离线）
 │
-├── selftest.py            自检整条管线（138 项）
+├── selftest.py            自检整条管线（141 项）
 ├── docs/
 │   ├── TESTING.md         人工验收脚本（给人看的）
 │   └── REPO-HINT.md       放进多 skill 仓库时的组织与安装方式

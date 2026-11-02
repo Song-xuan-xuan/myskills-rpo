@@ -1551,8 +1551,14 @@ def apply_page_structure(doc, cfg):
 
     if fm_nodes:
         fm_nodes.append(break_para(base_sect))
+        # 封面关闭时标题块留在正文开头，摘要要排在标题块之后，
+        # 否则会变成「摘要 → 标题 → 正文」的倒序。
+        at = cursor
+        if not cov.get("enabled") and title_paras:
+            at = list(body).index(title_paras[-1]) + 1
         for n in fm_nodes:
-            body.insert(cursor, n); cursor += 1
+            body.insert(at, n); at += 1
+        cursor = at
         roles.append("front")
 
     roles.append("body")

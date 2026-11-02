@@ -184,6 +184,76 @@ CHOICE_VALUES = {
 NO_RECOMMEND = {"base"}
 
 
+# —— 派生项的换算表 ——
+# 问答题里选的是人话，档案里存的是配置值；这些表负责两边翻译。
+# 编号/题注的写法必须和 docxfix 的渲染约定一致：
+#   format     -> w:lvlText（%1 %2 是层级序号）
+#   num_fmt    -> w:numFmt（chineseCounting 配 isLgl 会渲染成「1.1」）
+#   suffix     -> w:suff（以标点结尾的自动用 nothing，即「一、标题」）
+
+PAPER = {
+    "A4": (21.0, 29.7),
+    "A5": (14.8, 21.0),
+    "Letter": (21.59, 27.94),
+}
+
+LINE_SPACING = {
+    "单倍": ("line_spacing", 1.0),
+    "1.25倍": ("line_spacing", 1.25),
+    "1.5倍": ("line_spacing", 1.5),
+    "2倍": ("line_spacing", 2.0),
+    "固定20磅": ("line_spacing_pt", 20),
+    "固定28.8磅": ("line_spacing_pt", 28.8),
+}
+
+_NUM_DEC = {"num_fmt": "decimal", "indent_chars": 0}
+
+NUM_STYLES = {
+    "1 / 1.1 / 1.1.1": [
+        {"format": "%1", **_NUM_DEC},
+        {"format": "%1.%2", **_NUM_DEC},
+        {"format": "%1.%2.%3", **_NUM_DEC},
+        {"format": "%1.%2.%3.%4", **_NUM_DEC},
+    ],
+    "1. / 1.1. / 1.1.1.": [
+        {"format": "%1.", **_NUM_DEC},
+        {"format": "%1.%2.", **_NUM_DEC},
+        {"format": "%1.%2.%3.", **_NUM_DEC},
+        {"format": "%1.%2.%3.%4.", **_NUM_DEC},
+    ],
+    "一、 / （一） / 1.": [
+        {"format": "%1、", "num_fmt": "chineseCounting", "indent_chars": 0},
+        {"format": "（%2）", "num_fmt": "chineseCounting", "indent_chars": 0},
+        {"format": "%3.", **_NUM_DEC},
+        {"format": "%4.", **_NUM_DEC},
+    ],
+    "第1章 / 1.1 / 1.1.1": [
+        {"format": "第%1章", **_NUM_DEC},
+        {"format": "%1.%2", **_NUM_DEC},
+        {"format": "%1.%2.%3", **_NUM_DEC},
+        {"format": "%1.%2.%3.%4", **_NUM_DEC},
+    ],
+    "不自动编号": None,
+}
+
+# 题注外形 -> (模板, 是否按章编号)
+# 模板里的 {n} 是编号占位；按章编号时 docxfix 会在前面补「章号-」
+CAPTION_PRESETS = {
+    "图 1": ("图 {n}", False),
+    "图1": ("图{n}", False),
+    "图 1-1（按章）": ("图 {n}", True),
+    "Figure 1": ("Figure {n}", False),
+    "表 1": ("表 {n}", False),
+    "表1": ("表{n}", False),
+    "表 1-1（按章）": ("表 {n}", True),
+    "Table 1": ("Table {n}", False),
+    "(1)": ("({n})", False),
+    "（1）": ("（{n}）", False),
+    "式 1": ("式 {n}", False),
+    "(1-1)": ("({n})", True),
+}
+
+
 
 
 def label_of(value):
@@ -208,6 +278,30 @@ def _current_value(base, q):
             return None
         cur = cur[part]
     return cur
+
+
+def choice_is_current(qid, choice, base, questions):
+    """某个选项是不是档案里的「当前值」
+
+    _current_value() 取不到值时（路径为空、档案里没这一项），
+    再从 questions 里找到该问题的 path，宽松地比一次；
+    仍然比不上就返回 False。
+    """
+    if not isinstance(base, dict):
+        return False
+    for q in questions:
+        if q.get("id") != qid:
+            continue
+        path = q.get("path")
+        if not path:
+            return False
+        cur = get_path(base, path)
+        if cur is None:
+            return False
+        # CHOICE_VALUES 是「中文标签 -> 内部值」，反向也能对上
+        inv = {v: k for k, v in CHOICE_VALUES.get(qid, {}).items()}
+        return str(cur) == str(choice) or str(inv.get(cur)) == str(choice)
+    return False
 
 
 def build_ask(questions, base, round_no, feats, limit=4):

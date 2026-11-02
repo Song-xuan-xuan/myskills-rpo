@@ -129,6 +129,53 @@ def read_frontmatter(md_path):
     return meta
 
 
+def check_citation_setup(md_path):
+    """转换前检查参考文献的写法，返回 [(级别, 提示)]。
+
+    最常见的错误是「手写 URL 列表」：看起来像参考文献，实际只是一串项目符号，
+    转出来没有 [1] 编号、不是国标格式、正文也没有角标。
+    """
+    notes = []
+    try:
+        text = open(md_path, encoding="utf-8").read()
+    except OSError:
+        return notes
+
+    meta = read_frontmatter(md_path)
+    has_bib = bool(meta.get("bibliography"))
+    has_refs_div = bool(re.search(r"^:::\s*\{#refs\}", text, re.M))
+    # 形如 @key 的文献引用（排除 @fig: / @tbl: / @eq: / @sec:）
+    cites = re.findall(r"\[?@([A-Za-z0-9_\-:.]+)\]?", text)
+    cites = [c for c in cites if not c.split(":")[0] in
+             ("fig", "tbl", "eq", "sec", "lst")]
+    # 「参考来源 / 参考文献」章节里的裸链接列表
+    m = re.search(r"^#+\s*(参考来源|参考文献|参考资料|引用来源)[^\n]*\n(.*?)(?=^#+\s|\Z)",
+                  text, re.M | re.S)
+    url_bullets = 0
+    if m:
+        body = m.group(2)
+        url_bullets = len(re.findall(r"^\s*[-*+]\s+.*https?://", body, re.M))
+
+    if url_bullets and not has_bib:
+        notes.append(("warn",
+                      "「%s」这一节是手写的链接列表（%d 条），不是 bib 文献。"
+                      % (m.group(1), url_bullets)))
+        notes.append(("fix",
+                      "转出来会是项目符号 + 裸链接：没有 [1] 编号、没有国标格式、"
+                      "正文没有角标，删条目也不会重排。"))
+        notes.append(("fix",
+                      "改法：YAML 头加 bibliography: refs.bib，把每条落成 @misc 条目，"
+                      "正文对应处写 [@key]，该节改为「# 参考文献」+ ::: {#refs}"))
+    elif has_bib and not cites:
+        notes.append(("warn",
+                      "声明了 bibliography 但正文一个 [@key] 引用都没有——"
+                      "文献表会为空或只有你手动列出的条目。"))
+    elif has_bib and not has_refs_div:
+        notes.append(("warn", "有 bibliography 但没有 ::: {#refs} 占位，"
+                              "文献表不会出现在文末。"))
+    return notes
+
+
 def citation_args(md_path, profile):
     """参考文献：--citeproc + --csl
 
@@ -224,6 +271,14 @@ def cmd_convert(argv):
     tmpdir = tempfile.mkdtemp(prefix="md2docx.")
     raw = os.path.join(tmpdir, "raw.docx")
     try:
+        notes = check_citation_setup(md_abs)
+        if notes:
+            print("", file=sys.stderr)
+            print("[文献检查] 这份 md 的参考文献写法有问题：", file=sys.stderr)
+            for level, msg in notes:
+                print(("  ! " if level == "warn" else "    ") + msg,
+                      file=sys.stderr)
+            print("", file=sys.stderr)
         cmd = ["pandoc", md_name, "-o", raw,
                "--reference-doc", tpl,
                highlight_flag(),

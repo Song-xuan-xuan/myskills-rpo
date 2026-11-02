@@ -31,6 +31,6 @@ ln -s <repo>/md2docx .agents/skills/md2docx
 
 ```bash
 cd md2docx
-python3 selftest.py          # 136 项，应全绿
+python3 selftest.py          # 141 项，应全绿
 git status --short           # 不应出现 *.docx / *.pdf / build/ / __pycache__
 ```
