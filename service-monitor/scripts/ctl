@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# ctl —— 监控体系的安装与管理命令
+#
+#   ctl init                  一次性初始化 ~/.notify（装发送器 + 生成主频道）
+#   ctl new-channel <服务名>   为该服务建独立频道，并打印手机订阅指引
+#   ctl test <服务名>          发一条【测试】消息，验证链路通不通
+#   ctl status                看所有监控任务的状态
+#   ctl stop <服务名>          停止某个监控任务
+#
+# 频道策略：**默认共用主频道**，手机只需订阅一次。
+# 只有需要把通知推给别人、或想单独静音某个任务时，才用 new-channel 建独立频道。
+set -uo pipefail
+
+ROOT="$HOME/.notify"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+die() { echo "错误：$*" >&2; exit 2; }
+say() { echo "[$(date '+%F %H:%M:%S')] $*"; }
+
+# 16 位随机后缀，剔除易混字符 i l o 0 1（手打频道名时不容易看错）
+rand16() { LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' < /dev/urandom | head -c 16; }
+
+# 频道名前缀：默认取当前用户名（小写化、只留 a-z0-9-），可用 TOPIC_PREFIX 覆盖。
+# 前缀只是为了让手机通知里一眼看出是哪套系统，不含任何密钥。
+topic_prefix() {
+    local p="${TOPIC_PREFIX:-${USER:-notify}}"
+    printf '%s' "$p" | tr 'A-Z' 'a-z' | tr -dc 'a-z0-9-' | cut -c1-16
+}
+
+topic_of() {   # 某个服务实际使用的频道
+    local svc="$1" t=""
+    if [ -f "$ROOT/services/$svc.conf" ]; then
+        t=$(grep -m1 '^TOPIC=' "$ROOT/services/$svc.conf" 2>/dev/null \
+            | sed -e 's/^TOPIC=//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+    fi
+    if [ -z "$t" ]; then
+        # shellcheck disable=SC1090
+        [ -f "$ROOT/config" ] && . "$ROOT/config"
+        t="${DEFAULT_TOPIC:-}"
+    fi
+    echo "$t"
+}
+
+sub_guide() {   # 打印手机订阅指引
+    local topic="$1"
+    cat <<EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 📱 手机订阅指引（每个频道只需订阅一次，之后永久有效）
+
+     频道名：  $topic
+
+     1. 手机装 ntfy（Google Play / F-Droid / App Store）
+     2. App 里点  +  →  把上面这行贴进去  →  订阅
+     3. 进设置把 high 通道铃声设成「短提示音」
+     4. 把 max / 紧急通道关掉或设静音（本工具永不使用该档位）
+     5. 关闭系统对 ntfy 的电池优化，否则后台长连接会被杀
+
+     注意：ntfy 不支持扫码或点链接自动订阅（功能请求 #87/#121/#1015 尚未实现），
+           必须手动粘贴频道名，一个字符都不能差。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+}
+
+cmd="${1:-}"; shift || true
+
+case "$cmd" in
+
+# ═══════════════════════════════════════════════════════════════
+init)
+    mkdir -p "$ROOT/services" "$ROOT/logs" "$ROOT/state"
+    install -m 755 "$SELF_DIR/notify" "$ROOT/notify"
+    install -m 644 "$SELF_DIR/lib.sh" "$ROOT/lib.sh"
+
+    NEW=0
+    if [ ! -f "$ROOT/config" ]; then
+        TOPIC="$(topic_prefix)-main-$(rand16)"
+        cat > "$ROOT/config" <<EOC
+# ── 全局配置 ──
+NTFY_SERVER="https://ntfy.sh"
+
+# 主频道：所有任务默认共用这一个，手机只需订阅一次。
+# 不同任务靠通知标题里的 [服务名] 前缀区分。
+DEFAULT_TOPIC="$TOPIC"
+
+# 日志单文件超过多少 MB 轮转（由 ctl 检查）
+LOG_MAX_MB=5
+
+# 通知优先级：min / low / default / high（不支持 max —— 那是安卓闹钟式渠道）
+# 若手机把 high 渠道设成了静音，就改成 default（少了屏幕顶部弹窗，但会响）
+PRIORITY_DONE="\${PRIORITY_DONE:-high}"
+PRIORITY_INFO="\${PRIORITY_INFO:-low}"
+EOC
+        NEW=1
+        say "已创建全局配置：$ROOT/config"
+    else
+        # shellcheck disable=SC1090
+        . "$ROOT/config"
+        TOPIC="${DEFAULT_TOPIC:-}"
+        say "全局配置已存在，未改动"
+    fi
+
+    say "已安装：$ROOT/notify  $ROOT/lib.sh"
+    echo
+    echo "初始化完成。目录结构："
+    echo "  $ROOT/config              全局配置（主频道在这里）"
+    echo "  $ROOT/services/<服务名>.conf  可选，仅用于需要独立频道的服务"
+    echo "  $ROOT/logs/<服务名>.log   每个任务的运行日志"
+    echo "  $ROOT/state/<服务名>.lock 进程锁与 PID"
+    echo "  $ROOT/sent.jsonl          推送审计流水"
+
+    if [ "$NEW" = "1" ]; then
+        sub_guide "$TOPIC"
+        echo "👉 现在请到手机上订阅上面这个主频道。"
+        echo "   订阅好之后回复确认，再跑  ctl test  <任意服务名>  验证链路。"
+        echo "   以后新增监控任务**不需要**再动手机。"
+    fi
+    ;;
+
+# ═══════════════════════════════════════════════════════════════
+new-channel)
+    SVC="${1:?用法: ctl new-channel <服务名>}"
+    [ -f "$ROOT/config" ] || die "先执行 ctl init"
+    F="$ROOT/services/$SVC.conf"
+    [ -f "$F" ] && die "$SVC 已经有独立频道了：$F"
+
+    TOPIC="$(topic_prefix)-${SVC}-$(rand16)"
+    mkdir -p "$ROOT/services"
+    cat > "$F" <<EOC
+# $SVC 的独立频道。删掉这个文件就回退到主频道。
+TOPIC="$TOPIC"
+EOC
+
+    say "已为 $SVC 创建独立频道"
+    sub_guide "$TOPIC"
+    cat <<EOF
+ ⚠️  用了独立频道，就必须先在手机上完成订阅，
+     并跑  ctl test $SVC  确认收到之后，才能启动真实监控。
+     否则测试消息会发到一个没人订阅的频道里。
+
+EOF
+    ;;
+
+# ═══════════════════════════════════════════════════════════════
+test)
+    SVC="${1:?用法: ctl test <服务名>}"
+    [ -x "$ROOT/notify" ] || die "先执行 ctl init"
+    T=$(topic_of "$SVC")
+    [ -z "$T" ] && die "找不到 $SVC 的频道（主频道未配置？）"
+
+    say "发送测试消息到 $T"
+    # 测试标题必须带【测试】，绝不能伪装成真实的完成通知。
+    NOTIFY_SVC="$SVC" NOTIFY_TOPIC="$T" "$ROOT/notify" done \
+        "【测试】通道自检" \
+        "这是一条测试消息，不是任务完成。收到说明频道名对、手机能收。
+之后收到不带【测试】字样的才是真实通知。"
+    rc=$?
+    echo
+    if [ "$rc" = "0" ]; then
+        echo "服务器侧发送成功。请确认手机是否收到 —— 收到才能继续启动真实监控。"
+        echo "没收到就按顺序查：① 频道名是否打错（一个字符都不能差）"
+        echo "                  ② App 是否被系统杀了后台   ③ 手机是否开了勿扰"
+    else
+        echo "发送失败，先解决网络/频道问题再继续。"
+    fi
+    exit "$rc"
+    ;;
+
+# ═══════════════════════════════════════════════════════════════
+status)
+    printf '%-20s %-10s %-8s %-20s %s\n' "服务" "状态" "PID" "最后心跳" "频道"
+    printf '%-20s %-10s %-8s %-20s %s\n' "────" "────" "───" "────────" "────"
+    found=0
+    for lock in "$ROOT"/state/*.lock; do
+        [ -d "$lock" ] || continue
+        found=1
+        svc=$(basename "$lock" .lock)
+        pid=$(cat "$lock/pid" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then st="运行中"; else st="已停止"; fi
+        log="$ROOT/logs/$svc.log"
+        if [ -f "$log" ]; then beat=$(date -r "$log" '+%m-%d %H:%M' 2>/dev/null || echo "-"); else beat="-"; fi
+        t=$(topic_of "$svc")
+        printf '%-20s %-10s %-8s %-20s %s\n' "$svc" "$st" "${pid:--}" "$beat" "${t:0:24}…"
+    done
+    [ "$found" = "0" ] && echo "（还没有任何监控任务）"
+    ;;
+
+# ═══════════════════════════════════════════════════════════════
+stop)
+    SVC="${1:?用法: ctl stop <服务名>}"
+    LOCK="$ROOT/state/$SVC.lock"
+    [ -d "$LOCK" ] || die "$SVC 没有在运行（找不到 $LOCK）"
+    pid=$(cat "$LOCK/pid" 2>/dev/null)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null; say "已发送停止信号给 pid $pid"
+        sleep 1
+        kill -0 "$pid" 2>/dev/null && { kill -9 "$pid" 2>/dev/null; say "强制结束"; }
+    else
+        say "进程已不在，只清理锁"
+    fi
+    rm -rf "$LOCK"
+    tmux kill-session -t "$SVC" 2>/dev/null && say "已关闭 tmux 会话 $SVC"
+    ;;
+
+*)
+    sed -n '2,14p' "$0"
+    exit 2
+    ;;
+esac

@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# notify —— 唯一推送出口。监控脚本只许调它，脚本里不许出现 curl。
+#
+# 用法：  notify <级别> <标题> <正文>
+#   级别只接受四种语义值，不接受数字：
+#     done / warn  → high  响一声 + 弹窗（默认档位）
+#     start / info → low   静音
+#   这里【根本不产生 priority 5】——安卓的 5 是闹钟式通道，会一直响到手动划掉。
+#
+# 环境变量（一般由监控脚本从 lib.sh 得到，或由 ~/.notify/config 提供）：
+#   NOTIFY_SVC     服务名，用于给标题加 [服务名] 前缀、定位该服务的频道
+#   NOTIFY_TOPIC   直接指定频道（优先级最高，测试时用）
+#   NOTIFY_DRY=1   只打印不发送
+set -uo pipefail
+
+LEVEL="${1:-}"; TITLE="${2:-}"; BODY="${3:-}"
+if [ -z "$LEVEL" ] || [ -z "$TITLE" ]; then
+    echo "用法: notify <done|start|warn|info> <标题> <正文>" >&2
+    exit 2
+fi
+
+ROOT="$HOME/.notify"
+CFG="$ROOT/config"
+# shellcheck disable=SC1090
+[ -f "$CFG" ] && . "$CFG"
+NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
+DEFAULT_TOPIC="${DEFAULT_TOPIC:-}"
+
+# ── 级别 → 优先级：全系统唯一的映射点 ──
+# 具体档位可以在 ~/.notify/config 里覆盖，因为不同手机的「通知渠道」配置不同：
+#   有的手机把 high 渠道设成了静音，那就要退回 default（少了屏幕顶部弹窗）。
+# 只允许下面这四个名字，故意不支持 max/5 —— 那是安卓的闹钟式渠道。
+case "$LEVEL" in
+    done|warn)  PRIO="${PRIORITY_DONE:-high}"; TAGS=bell ;;
+    start|info) PRIO="${PRIORITY_INFO:-low}";  TAGS=arrow_forward ;;
+    *) echo "notify: 级别只接受 done/start/warn/info，收到 '$LEVEL'" >&2; exit 2 ;;
+esac
+
+case "$PRIO" in
+    min|low|default|high) ;;
+    *) echo "notify: PRIORITY_DONE/PRIORITY_INFO 只能是 min/low/default/high（不支持 max/5）" >&2; exit 2 ;;
+esac
+
+# ── 频道解析：指定 > 该服务的专属频道 > 默认主频道 ──
+TOPIC="${NOTIFY_TOPIC:-}"
+if [ -z "$TOPIC" ] && [ -n "${NOTIFY_SVC:-}" ] && [ -f "$ROOT/services/$NOTIFY_SVC.conf" ]; then
+    TOPIC=$(grep -m1 '^TOPIC=' "$ROOT/services/$NOTIFY_SVC.conf" 2>/dev/null \
+            | sed -e 's/^TOPIC=//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+fi
+[ -z "$TOPIC" ] && TOPIC="$DEFAULT_TOPIC"
+if [ -z "$TOPIC" ]; then
+    echo "notify: 没有可用频道。先执行 ctl init 建立主频道。" >&2
+    exit 2
+fi
+
+# ── 标题加 [服务名] 前缀 ──
+# 共用主频道时，手机通知列表里全靠这个前缀区分是哪个任务。
+# 永远加，不做条件判断——行为可预测比"聪明"重要。
+if [ -n "${NOTIFY_SVC:-}" ]; then
+    TITLE="[$NOTIFY_SVC] $TITLE"
+fi
+
+# ── 空正文兜底 ──
+# 部分推送接口会拒发空 body；而且空通知本身也没有信息量。
+[ -z "${BODY// /}" ] && BODY="（条件已满足，详情见日志）"
+
+if [ "${NOTIFY_DRY:-0}" = "1" ]; then
+    echo "[dry-run] level=$LEVEL priority=$PRIO → $NTFY_SERVER/$TOPIC"
+    echo "          标题: $TITLE"
+    echo "          正文: $BODY"
+    exit 0
+fi
+
+mkdir -p "$ROOT"
+LOG="$ROOT/sent.jsonl"
+
+# ── 发送：最多重试 3 次，指数退避 ──
+# 网络抖一下就把「完成通知」弄丢，是最不能接受的失败。
+# -f 必须加：不加 -f 时 curl 遇到 4xx/5xx 也返回 0，日志会写"已推送"其实没发出去。
+attempt=1; max=3; delay=1; code=0
+while [ "$attempt" -le "$max" ]; do
+    resp=$(curl -sS -f --max-time 20 \
+                -H "Title: $TITLE" \
+                -H "Priority: $PRIO" \
+                -H "Tags: $TAGS" \
+                -H "X-Cache: no" \
+                -d "$BODY" \
+                -w '\n%{http_code}' \
+                "$NTFY_SERVER/$TOPIC" 2>&1)
+    code=$(printf '%s' "$resp" | tail -1)
+    [ "$code" = "200" ] && break
+    [ "$attempt" -lt "$max" ] && { echo "notify: 第 $attempt 次失败(HTTP ${code:-无响应})，${delay}s 后重试" >&2; sleep "$delay"; delay=$(( delay * 3 )); }
+    attempt=$(( attempt + 1 ))
+done
+
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+if [ "$code" = "200" ]; then
+    echo "已推送 [$LEVEL/prio=$PRIO] → $NTFY_SERVER/$TOPIC"
+    printf '{"ts":"%s","level":"%s","priority":"%s","channel":"%s","svc":"%s","title":"%s","http":%s}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$LEVEL" "$PRIO" "$TOPIC" "${NOTIFY_SVC:-}" "$(esc "$TITLE")" "$code" >> "$LOG"
+    exit 0
+else
+    echo "notify: 推送失败，已重试 $max 次（最后的 HTTP=${code:-无响应}）" >&2
+    printf '{"ts":"%s","level":"%s","channel":"%s","svc":"%s","title":"%s","http":%s,"error":true}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$LEVEL" "$TOPIC" "${NOTIFY_SVC:-}" "$(esc "$TITLE")" "${code:-0}" >> "$LOG"
+    exit 1
+fi
