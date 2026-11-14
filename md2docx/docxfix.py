@@ -1608,6 +1608,155 @@ def apply_page_structure(doc, cfg):
 
 # ---------------- 4. 标题自动编号 ----------------
 
+# ---------------- 4.5 摘掉标题里手写的序号 ----------------
+#
+# 用户（或 agent）在 md 里常写成「## 1.2 模块开发顺序」，
+# 自动编号又加一个「1.2」，Word 里就出现「1.2 1.2 模块开发顺序」。
+# 这里在挂 numPr 之前，把手写的那个序号从标题文字里摘掉，只留自动的那个。
+
+_CN_NUM = "一二三四五六七八九十百千零〇两"
+
+# 结尾自带分隔符的写法（中文习惯，后面不空格）：「1、」「一、」「（一）」
+_GENERIC_PREFIX = [
+    r"\d+(?:[.．]\d+)+[.．、)）]?",          # 1.2 / 1.2.3 / 1.2、
+    r"[（(][%s]+[)）]" % _CN_NUM,              # （一）
+    r"[%s]+[、.．]" % _CN_NUM,                 # 一、
+    r"第[%s\d]+[章节条款篇部]" % _CN_NUM,      # 第一章
+    r"[A-Z](?:[.．]\d+)+[.．、]?",             # A.1
+    r"\d+[、)）]",                            # 1、
+]
+
+
+def _manual_number_re(levels_cfg):
+    """按配置的编号格式，生成「标题里手写序号」的匹配式。
+
+    除了通用写法，还精确匹配当前配置的格式（`%1.%2` → `\\d+\\.\\d+`），
+    这样「1 概述」这种单数字开头也能识别，而「2024 年度报告」不会误伤。
+    """
+    pats = []
+
+    def slot(tok):
+        # %1 %2 … 换成「阿拉伯数字或中文数字」
+        return "[%s\\d]+" % _CN_NUM
+
+    for lc in (levels_cfg or []):
+        lc = lc or {}
+        fmt = lc.get("format")
+        if not fmt:
+            continue
+        buf = []
+        for tok in re.split(r"(%\d)", fmt):
+            buf.append(slot(tok) if re.fullmatch(r"%\d", tok) else re.escape(tok))
+        pats.append("".join(buf))
+    return pats
+
+
+def strip_manual_heading_numbers(doc, cfg):
+    """把标题文字里手写的序号摘掉（自动编号才是唯一的序号）。
+
+    返回摘掉的标题列表，供调用方打印提示。
+    """
+    hn = cfg.get("heading_numbering") or {}
+    if not hn.get("enabled"):
+        return []
+    if hn.get("strip_manual") is False:
+        return []
+
+    levels_cfg = hn.get("levels")
+    if isinstance(levels_cfg, int):
+        levels_cfg = [{}] * levels_cfg
+    if not levels_cfg:
+        levels_cfg = [{"format": f} for f in (hn.get("format") or [])]
+
+    # 生成 [(该级别专属的正则, 是否允许「纯数字紧贴空白」)]。
+    # 级别专属的正则只对同级别标题生效——否则二级标题也会被一级的
+    # 「%1」规则误伤（「2024 年度总结」会被摘成「年度总结」）。
+    exact_by_level = {}
+    for i, p in enumerate(_manual_number_re(levels_cfg)):
+        fmt = ((levels_cfg[i] or {}).get("format") or "") if i < len(levels_cfg) else ""
+        # 格式以数字槽结尾（如「%1」「%1.%2」）时，才可能出现「1 概述」这种
+        # 数字后直接跟空格的写法
+        bare_tail = bool(re.search(r"%\d$", fmt)) or not fmt
+        exact_by_level[i + 1] = (re.compile("^" + p), bare_tail)
+
+    generic = [re.compile("^" + p) for p in _GENERIC_PREFIX]
+
+    def match_prefix(text, level):
+        cands = []
+        if level in exact_by_level:
+            cands.append(exact_by_level[level])
+        for rx in generic:
+            cands.append((rx, False))
+
+        for rx, bare_tail in cands:
+            m = rx.match(text)
+            if not m:
+                continue
+            rest = text[m.end():]
+            if not rest:
+                continue                      # 只剩序号，摘完就空了，不动
+            tight = text[m.end() - 1] in "、.．)）】》"   # 中文写法本来就紧贴
+            if not tight and rest[0] not in " \u3000\t":
+                continue                      # 「3D 打印」这类正常文字
+            if bare_tail and not tight:
+                # 纯数字 + 空格：只认短的序号，「2024 年度总结」不认
+                num = m.group(0).strip()
+                if num.isdigit() and len(num) > 3:
+                    continue
+            return m.end()
+        return 0
+
+    changed = []
+    for p in doc.element.body.iter(wq("p")):
+        st = p.find(wq("pPr"))
+        if st is None:
+            continue
+        ps = st.find(wq("pStyle"))
+        sid = ps.get(wq("val")) if ps is not None else ""
+        if not sid or not sid.startswith("Heading") or sid == "Heading":
+            continue
+        try:
+            level = int(sid[len("Heading"):])
+        except ValueError:
+            continue
+        text = para_text(p)
+        if not text:
+            continue
+        cut = match_prefix(text, level)
+        if cut <= 0:
+            continue
+        _strip_leading(p, cut)
+        changed.append((text, para_text(p)))
+    return changed
+
+
+def _strip_leading(p, n):
+    """从段落开头删掉 n 个字符（跨 run），并清掉残留的空 run。"""
+    left = n
+    for t in p.iter(qn("w:t")):
+        if left <= 0:
+            break
+        s = t.text or ""
+        cut = min(len(s), left)
+        left -= cut
+        s = s[cut:]
+        if left <= 0:
+            s = s.lstrip(" \u3000\t")     # 顺手吃掉序号后的那一个空格
+        t.text = s
+        if s != s.strip():
+            t.set(qn("xml:space"), "preserve")
+    # 删掉被清空的 run（否则 Word 里会留一串空 run）
+    for r in list(p.iter(qn("w:r"))):
+        keep = any((r.find(qn(k)) is not None) for k in
+                   ("w:br", "w:tab", "w:drawing", "w:fldChar", "w:instrText",
+                    "w:numPr", "w:sym", "w:pict", "w:object"))
+        txt = "".join(t.text or "" for t in r.findall(qn("w:t")))
+        if not keep and not txt:
+            parent = r.getparent()
+            if parent is not None:
+                parent.remove(r)
+
+
 def heading_numbering(doc, cfg):
     hn = cfg.get("heading_numbering") or {}
     if not hn.get("enabled"):
@@ -2241,6 +2390,14 @@ def main():
     landscape_tables(doc, cfg)
     apply_drop_cap(doc, cfg)
     if "--no-heading-number" not in flags:
+        stripped = strip_manual_heading_numbers(doc, cfg)
+        if stripped:
+            print("  · 摘掉标题里手写的序号 %d 处（编号由域生成，不再手写）："
+                  % len(stripped))
+            for before, after in stripped[:5]:
+                print("      %s  →  %s" % (before[:28], after[:28] or "(空)"))
+            if len(stripped) > 5:
+                print("      ……另有 %d 处" % (len(stripped) - 5))
         heading_numbering(doc, cfg)
         ap_num_id = build_appendix_numbering(doc, cfg)
         apply_appendix(doc, cfg, ap_num_id)

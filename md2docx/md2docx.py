@@ -129,6 +129,65 @@ def read_frontmatter(md_path):
     return meta
 
 
+_CN_NUM = "一二三四五六七八九十百千零〇两"
+
+# 标题里手写序号的常见写法（与 docxfix.strip_manual_heading_numbers 保持一致）
+_MANUAL_HEADING = [
+    r"\d+(?:[.．]\d+)+[.．、)）]?",            # 1.2 / 1.2.3 / 1.2、
+    r"[（(][%s]+[)）]" % _CN_NUM,                # （一）
+    r"[%s]+[、.．]" % _CN_NUM,                   # 一、
+    r"第[%s\d]+[章节条款篇部]" % _CN_NUM,       # 第一章
+    r"[A-Z](?:[.．]\d+)+[.．、]?",               # A.1
+    r"\d+[、)）]",                              # 1、
+    r"\d+[.．]\s",                              # 1. 概述
+]
+
+
+def check_heading_setup(md_path):
+    """检查 md 的标题里有没有手写序号。
+
+    标题编号由 Word 的列表域生成，md 里再手写一遍就会变成「1.2 1.2 标题」
+    （导出时虽然会自动摘掉，但 md 稿子本身也会有歧义，最好一开始就不写）。
+    """
+    notes = []
+    try:
+        text = open(md_path, encoding="utf-8").read()
+    except OSError:
+        return notes
+
+    hits = []
+    for i, line in enumerate(text.splitlines(), 1):
+        m = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if not m:
+            continue
+        body = m.group(2)
+        for pat in _MANUAL_HEADING:
+            mm = re.match("^" + pat, body)
+            if not mm:
+                continue
+            rest = body[mm.end():]
+            tight = body[mm.end() - 1] in "、.．)）】》"
+            if rest and (tight or rest[0] in " \u3000\t"):
+                # 纯数字 + 空格时只认短序号，「2024 年度总结」不算
+                num = mm.group(0).strip()
+                if not (num.isdigit() and len(num) > 3):
+                    hits.append((i, len(m.group(1)), body))
+            break
+
+    if hits:
+        notes.append(("warn", "标题里手写了序号（%d 处），Word 里会多一个序号："
+                              % len(hits)))
+        for ln, lv, body in hits[:3]:
+            notes.append(("fix", "第 %d 行 H%d「%s」" % (ln, lv, body[:26])))
+        if len(hits) > 3:
+            notes.append(("fix", "……另有 %d 处" % (len(hits) - 3)))
+        notes.append(("fix", "改法：md 里只写标题文字——「## 模块开发顺序」而不是"
+                             "「## 1.2 模块开发顺序」。序号由样式自动生成，"
+                             "增删章节会自动重排。"))
+        notes.append(("fix", "（本次导出会自动摘掉手写序号，但 md 稿子建议一并改掉。）"))
+    return notes
+
+
 def check_citation_setup(md_path):
     """转换前检查参考文献的写法，返回 [(级别, 提示)]。
 
@@ -271,6 +330,15 @@ def cmd_convert(argv):
     tmpdir = tempfile.mkdtemp(prefix="md2docx.")
     raw = os.path.join(tmpdir, "raw.docx")
     try:
+        head_notes = check_heading_setup(md_abs)
+        if head_notes:
+            print("", file=sys.stderr)
+            print("[标题检查]", file=sys.stderr)
+            for level, msg in head_notes:
+                print(("  ! " if level == "warn" else "    ") + msg,
+                      file=sys.stderr)
+            print("", file=sys.stderr)
+
         notes = check_citation_setup(md_abs)
         if notes:
             print("", file=sys.stderr)

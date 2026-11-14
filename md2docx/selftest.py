@@ -579,6 +579,33 @@ d.save(sys.argv[2])
     else:
         ok = check("--reference 自定义模板可用", False, r.stderr.strip()[:200]) and ok
 
+    # 标题手写序号：要摘掉，但不能误伤「3D 打印」「2024 年度总结」
+    hd_md = os.path.join(OUT, "headnum.md")
+    with open(hd_md, "w", encoding="utf-8") as fh:
+        fh.write("---\ntitle: 标题测试\n---\n\n"
+                 "# 一、一级标题\n\n正文。\n\n"
+                 "## 1.2 二级标题\n\n正文。\n\n"
+                 "## 3D 打印技术的引入\n\n正文。\n\n"
+                 "## 2024 年度总结\n\n正文。\n\n"
+                 "## 没有序号的标题\n\n正文。\n")
+    hd_out = os.path.join(OUT, "headnum.docx")
+    r = run([sys.executable, "md2docx.py", hd_md, hd_out])
+    if check("标题手写序号能转换成功", r.returncode == 0, r.stderr.strip()[:150]) and ok:
+        ok = check("转换时提示标题手写序号", "标题里手写了序号" in (r.stderr + r.stdout)) and ok
+        import zipfile as _zf
+        dx = _zf.ZipFile(hd_out).read("word/document.xml").decode()
+        heads = re.findall(r'<w:pStyle w:val="Heading\d"/>.*?</w:p>', dx, re.S)
+        texts = ["".join(re.findall(r'<w:t[^>]*>([^<]*)<', h)) for h in heads]
+        texts = [t for t in texts if t.strip()]
+        ok = check("「一、」被摘掉", "一级标题" in texts, str(texts)) and ok
+        ok = check("「1.2」被摘掉", "二级标题" in texts, str(texts)) and ok
+        ok = check("「3D 打印」没被误伤",
+                   any("3D" in t for t in texts), str(texts)) and ok
+        ok = check("「2024 年度总结」没被误伤",
+                   any("2024" in t for t in texts), str(texts)) and ok
+        ok = check("没有序号的标题不动",
+                   "没有序号的标题" in texts, str(texts)) and ok
+
     # 参考文献写法预检：手写 URL 列表要告警
     bad_md = os.path.join(OUT, "badrefs.md")
     with open(bad_md, "w", encoding="utf-8") as fh:

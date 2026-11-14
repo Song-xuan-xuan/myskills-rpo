@@ -12,7 +12,7 @@ description: 把 Markdown 报告转成排版规范、编号可自动重排的 Wo
 brew install pandoc            # 或 apt install pandoc
 pip install -r requirements.txt
 
-# 自检（换机器后先跑这个，141 项）
+# 自检（换机器后先跑这个，148 项）
 python3 selftest.py
 ```
 
@@ -207,6 +207,7 @@ python3 $SKILL/configure.py --base <md名>.profile.json --out <md名>.profile.js
 | 标题字号/字体 | `styles.Heading1..6.size_pt` / `.east_asia_font` |
 | 标题加粗 | `styles.Heading1..6.bold` |
 | 标题编号形式 | `heading_numbering.levels[].format` + `.num_fmt`（用 `--answers` 传 `num_style` 更省事） |
+| 保留标题里的手写序号 | `heading_numbering.strip_manual` = `false`（默认自动摘掉） |
 | 图号长成「图 1」还是「(1)」 | `captions.fig` / `.tbl` / `.eq`，`{n}` 是编号占位 |
 | 正文引用显示「图 1」还是「1」 | `refs.fig` / `.tbl` / `.eq` |
 | 图号按章（2-1） | `captions.chapter` = true |
@@ -242,6 +243,11 @@ python3 $SKILL/configure.py --base <md名>.profile.json --out <md名>.profile.js
 
    **引用一律写 `{{fig:x}}`、`{{tbl:x}}`、`{{eq:x}}`、`{{sec:x}}`，不要写 `@fig:x`**
    ——pandoc 的 citeproc 会把 `@xxx` 当文献引用吃掉。
+
+   **标题同样不许手写序号**：写 `## 模块开发顺序`，不要写 `## 1.2 模块开发顺序`。
+   否则 Word 里会变成「1.2 1.2 模块开发顺序」（样式编号 + 你写的文字各一个）。
+   导出时会自动摘掉手写的那个，但 md 稿子本身也该干净——序号由样式生成，
+   增删章节自动重排。
 
 2. **参考文献必须用 bib 机制，不能手写 URL 列表**。
 
