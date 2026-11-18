@@ -2,6 +2,7 @@
 # ctl —— 监控体系的安装与管理命令
 #
 #   ctl init                  一次性初始化 ~/.notify（装发送器 + 生成主频道）
+#   ctl init --topic <频道名>  初始化但沿用手机上已订阅的频道（换机器时用这个）
 #   ctl new-channel <服务名>   为该服务建独立频道，并打印手机订阅指引
 #   ctl test <服务名>          发一条【测试】消息，验证链路通不通
 #   ctl status                看所有监控任务的状态
@@ -68,12 +69,55 @@ case "$cmd" in
 
 # ═══════════════════════════════════════════════════════════════
 init)
+    # 支持「沿用已有频道」：ctl init --topic <频道名>
+    #
+    # 为什么必须有这个入口：
+    #   换一台机器、换一个 agent 时，用户手机上订阅的那个频道**是不变的**。
+    #   如果这里还傻乎乎生成一个新的随机频道，消息就会发到一个没人订阅的地方，
+    #   用户会以为「配好了但收不到」，而且从服务端完全看不出来（HTTP 照样 200）。
+    ADOPT=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --topic)   ADOPT="${2:?--topic 后面要跟频道名}"; shift 2 ;;
+            --topic=*) ADOPT="${1#--topic=}"; shift ;;
+            -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+            *) die "ctl init 不认识的参数：$1（可用 --topic <已有频道>）" ;;
+        esac
+    done
+
+    # ntfy 的 topic 只允许字母、数字、下划线、连字符，最长 64
+    valid_topic() { printf '%s' "$1" | grep -qE '^[A-Za-z0-9_-]{1,64}$'; }
+
     mkdir -p "$ROOT/services" "$ROOT/logs" "$ROOT/state"
     install -m 755 "$SELF_DIR/notify" "$ROOT/notify"
     install -m 644 "$SELF_DIR/lib.sh" "$ROOT/lib.sh"
 
     NEW=0
-    if [ ! -f "$ROOT/config" ]; then
+    if [ -n "$ADOPT" ]; then
+        valid_topic "$ADOPT" || die "频道名只能含字母/数字/下划线/连字符，最长 64：$ADOPT"
+        TOPIC="$ADOPT"
+        if [ -f "$ROOT/config" ] && grep -q '^DEFAULT_TOPIC=' "$ROOT/config"; then
+            sed -i.bak "s|^DEFAULT_TOPIC=.*|DEFAULT_TOPIC=\"$TOPIC\"|" "$ROOT/config" || die "改写配置失败"
+            rm -f "$ROOT/config.bak"
+            say "沿用已有频道，已把主频道改为：$TOPIC"
+        else
+            cat > "$ROOT/config" <<EOC
+# ── 全局配置 ──
+NTFY_SERVER="https://ntfy.sh"
+
+# 主频道：沿用用户手机上已经订阅的那个，不再新建。
+DEFAULT_TOPIC="$TOPIC"
+
+# 日志单文件超过多少 MB 轮转（由 ctl 检查）
+LOG_MAX_MB=5
+
+# 通知优先级：min / low / default / high（不支持 max —— 那是安卓闹钟式渠道）
+PRIORITY_DONE="\${PRIORITY_DONE:-high}"
+PRIORITY_INFO="\${PRIORITY_INFO:-low}"
+EOC
+            say "沿用已有频道创建配置：$TOPIC"
+        fi
+    elif [ ! -f "$ROOT/config" ]; then
         TOPIC="$(topic_prefix)-main-$(rand16)"
         cat > "$ROOT/config" <<EOC
 # ── 全局配置 ──
@@ -114,6 +158,10 @@ EOC
         echo "👉 现在请到手机上订阅上面这个主频道。"
         echo "   订阅好之后回复确认，再跑  ctl test  <任意服务名>  验证链路。"
         echo "   以后新增监控任务**不需要**再动手机。"
+    elif [ -n "$ADOPT" ]; then
+        echo "👉 这个频道你手机已经订阅过了，不需要再订阅。"
+        echo "   直接跑  ctl test <任意服务名>  确认链路通即可。"
+        echo "   若其他机器也在往同一频道推消息，靠标题里的 [服务名] 前缀区分。"
     fi
     ;;
 

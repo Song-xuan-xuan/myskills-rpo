@@ -42,11 +42,24 @@ version: 1.0.0
 
 **① 首次使用先初始化**
 
+先问用户一句：**你手机上已经订阅过某个 ntfy 频道了吗？**
+
 ```bash
-~/.pi/agent/skills/service-monitor/scripts/ctl init
+# 情况 A：用户已有频道（换机器、换 agent、重装系统时最常见）
+~/.pi/agent/skills/service-monitor/scripts/ctl init --topic <用户给的频道名>
+
+# 情况 B：全新开始，没有现成频道
+~/.pi/agent/skills/service-monitor/scripts/ctl init     # 生成 16 位随机频道名
 ```
 
-生成 `~/.notify/`（config / notify / lib.sh / services / logs / state），并为主频道生成 16 位随机频道名。输出里会带手机订阅指引。
+> ⚠️ **有现成频道却跑了不带 `--topic` 的 `ctl init`，是本 skill 最容易致命的一步。**
+> 那会生成一个新频道，消息全发到没人订阅的地方，而服务端完全看不出来（HTTP 照样 200）。
+> 用户会以为「配好了但收不到」，只能靠翻手机发现没订阅过这个新名字。
+
+两种情况都会生成 `~/.notify/`（config / notify / lib.sh / services / logs / state）。
+
+- 情况 A（沿用）：**不要**再给订阅指引，用户手机上已经订好了，直接进 ④ 跑 `ctl test` 验证
+- 情况 B（新建）：输出里带订阅指引，按 ③ 走
 
 **② 问用户：用主频道还是新建独立频道**
 
@@ -203,6 +216,7 @@ TIMEOUT=3600
 - ❌ 用真实完成格式发测试消息
 - ❌ 正文包含密钥、token、内部系统地址、真实用户数据
 - ❌ 用过程文件当完成信号却不设 `STABLE`
+- ❌ 用户已有现成频道却用 `ctl init` 生成了新频道（应使用 `ctl init --topic`）
 - ❌ 用户还没确认订阅就发测试消息并启动监控
 - ❌ 在 `tmux` 命令里用 `| tee`（管道会吞掉退出码）
 
@@ -210,6 +224,7 @@ TIMEOUT=3600
 
 ## 交付前自查清单
 
+- [ ] 已问过用户：手机上是否已有订阅过的频道（有则用 `--topic` 沿用）
 - [ ] 已问过用户：主频道还是独立频道
 - [ ] 若用独立频道：频道名已原样贴出，且**用户已确认订阅完成**
 - [ ] 已跑 `--test`，且**用户确认手机收到**
